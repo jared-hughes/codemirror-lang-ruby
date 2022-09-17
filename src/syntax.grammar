@@ -1,11 +1,802 @@
-@top Program { Identifier* }
+// Based on the Ruby Tree-Sitter grammar:
+// https://github.com/tree-sitter/tree-sitter-ruby/blob/master/grammar.js
+// line numbers in parentheses refer to the 2022-09-02 commit 
+// 656abef0645caea793e33c1c773570722463e1d8 
 
-@skip { LineComment }
+@top Program {
+  statements?
+  // TODO __END__ handling (106)
+}
+
+// TODO kw<> all the reserved words
+
+// TODO handle whitespace-sensitive tokens (34-48)
+
+@skip { Comment }
+
+@precedence {
+  complement,
+  exponential,
+  unaryMinus,
+  multiplicative,
+  additive,
+  shift,
+  scopeResolution,
+  call,
+  bitwiseAnd,
+  bitwiseOr,
+  comparison,
+  relational,
+  bitwiseAnd,
+  bitwiseOrPlusOne,
+  bitwiseOr,
+  comparison,
+  relational,
+  booleanAnd,
+  booleanOr,
+  range,
+  conditional,
+  rescue,
+  assign,
+  alias,
+  defined,
+  not,
+  elementReference @left,
+  assignmentCommon,
+  or,
+  and,
+  // are these for tokenizers? (2)
+  // curlyBlock,
+  // doBlock,
+  comment,
+
+  // left/right only
+  returnCommand @left,
+  yieldCommand @left,
+  breakCommand @left,
+  nextCommand @left,
+  return @left,
+  yield @left,
+  break @left,
+  next @left,
+  redo @left,
+  retry @left,
+  chainedCommandCall @left,
+  blockArgument @right
+}
+
+BlockBody { statements }
+
+statements {
+  (statement terminator | ";")+ statement? | 
+  statement
+}
+
+terminator { lineBreak | ";" }
+
+BeginBlock {
+  "BEGIN" "{" statements? "}"
+}
+
+EndBlock {
+  "END" "{" statements? "}"
+}
+
+statement {
+  Undef |
+  Alias |
+  IfModifier |
+  UnlessModifier |
+  WhileModifier |
+  UntilModifier |
+  RescueModifier |
+  BeginBlock |
+  EndBlock |
+  expression
+}
+
+Method {
+  "def" methodRest
+}
+
+SingletonMethod {
+  "def"
+  (
+    variable |
+    "(" arg ")"
+  )
+  ("." | "..")
+  methodRest
+}
+
+methodRest {
+  methodName
+  (
+    bodyExpr |
+    Parameters (terminator? BodyStatement? "end") bodyExpr |
+    BareParameters? terminator BodyStatement? "end"
+  )
+}
+
+RescueModifierArg {
+  !rescue
+  arg "rescue" arg
+}
+
+RescueModifierExpression {
+  !rescue
+  expression "rescue" arg
+}
+
+bodyExpr {
+  "=" (arg | RescueModifierArg)
+}
+
+Parameters {
+  "(" commaSep<formalParameter> ")"
+}
+
+BareParameters {
+  simpleFormalParameter ("," formalParameter)*
+}
+
+BlockParameters {
+  "|" commaSep<formalParameter> ","?
+  (";" commaSep1<Identifier>) // Block shadow variables
+}
+
+formalParameter {
+  simpleFormalParameter | Parameters
+}
+
+simpleFormalParameter {
+  Identifier |
+  SplatParameter |
+  HashSplatParameter |
+  HashSplatNil |
+  ForwardParameter |
+  BlockParameter |
+  KeywordParameter |
+  OptionalParameter
+}
+
+ForwardParameter { "..." }
+
+SplatParameter { "*" Identifier? }
+
+HashSplatParameter { "**" Identifier? }
+
+HashSplatNil { "**" "nil" }
+
+BlockParameter { "&" Identifier? }
+
+KeywordParameter {
+  !bitwiseOrPlusOne
+  Identifier ":" arg
+}
+
+OptionalParameter {
+  !bitwiseOrPlusOne
+  Identifier "=" arg
+}
+
+Class {
+  "class"  (Constant | ScopeResolution)
+  (Superclass terminator | terminator?)
+  BodyStatement?
+  "end"
+}
+
+Superclass {
+  "<" expression
+}
+
+SingletonClass {
+  "class" "<<"
+  arg terminator
+  BodyStatement? "end"
+}
+
+Module {
+  "module" (Constant | ScopeResolution) terminator?
+  BodyStatement? "end"
+}
+
+ReturnCommand { !returnCommand 'return' CommandArgumentList }
+YieldCommand { !yieldCommand 'yield' CommandArgumentList }
+BreakCommand { !breakCommand 'break' CommandArgumentList }
+NextCommand { !nextCommand 'next' CommandArgumentList }
+Return { !return 'return' ArgumentList? }
+Yield { !yield 'yield' ArgumentList? }
+Break { !break 'break' ArgumentList? }
+Next { !next 'next' ArgumentList? }
+Redo { !redo 'redo' ArgumentList? }
+Retry { !retry 'retry' ArgumentList? }
+
+IfModifier { !rescue statement 'if' expression }
+UnlessModifier { !rescue statement 'unless' expression }
+WhileModifier { !rescue statement 'while' expression }
+UntilModifier { !rescue statement 'until' expression }
+RescueModifier { !rescue statement 'rescue' expression }
+
+While { 'while' statement Do }
+Until { 'until' statement Do }
+For { 'for' (lhs | LeftAssignmentList) In Do }
+In { 'in' arg }
+Do { ('do' | terminator) statements? 'end' }
+
+Case { 'case' statement terminator? When* Else? 'end' }
+CaseMatch { 'case' statement terminator? InClause+ Else? 'end' }
+When { 'when' commaSep1<Pattern> (terminator | Then) }
+InClause { 'in' patternTopExprBody guard? (terminator | Then) }
+Pattern { arg | SplatArgument }
+guard {
+  IfGuard { 'if' expression} |
+  UnlessGuard { 'unless' expression }
+}
+
+patternTopExprBody {
+  patternExpr |
+  arrayPatternN |
+  findPatternBody |
+  hashPatternBody
+}
+
+arrayPatternN {
+  patternExpr ',' |
+  patternExpr ',' (patternExpr | arrayPatternN) |
+  SplatParameter (',' patternExpr)*
+}
+
+patternExpr { AsPattern | patternExprAlt }
+
+AsPattern { patternExpr '=>' Identifier }
+
+patternExprAlt { AlternativePattern | patternExprBasic }
+
+AlternativePattern { patternExprBasic ("|" patternExprBasic)+ }
+
+arrayPatternBody { patternExpr | arrayPatternN }
+
+// TODO: combine ArrayPattern, FindPattern, HashPattern into a single generic
+ArrayPattern {
+  "[" arrayPatternBody? "]" |
+  patternConstant '[' arrayPatternBody? ']' |
+  patternConstant '(' arrayPatternBody? ')'
+}
+
+findPatternBody { SplatParameter ("," patternExpr)+ "," SplatParameter }
+
+FindPattern {
+  "[" findPatternBody? "]" |
+  patternConstant '[' findPatternBody? ']' |
+  patternConstant '(' findPatternBody? ')'
+}
+
+hashPatternBody {
+  commaSep1<KeywordPattern> ","? |
+  commaSep1<KeywordPattern> "," hashPatternAnyRest |
+  hashPatternAnyRest
+}
+
+KeywordPattern {
+  (Identifier | Constant | IdentifierSuffix | ConstantSuffix | String)
+  ":" patternExpr?
+}
+
+hashPatternAnyRest { HashSplatParameter | HashSplatNil }
+
+HashPattern {
+  "{" hashPatternBody? "}" |
+  patternConstant '[' hashPatternBody ']' |
+  patternConstant '(' hashPatternBody ')'
+}
+
+patternExprBasic {
+  patternValue |
+  Identifier |
+  ArrayPattern |
+  FindPattern |
+  HashPattern |
+  ParenthesizedPattern
+}
+
+ParenthesizedPattern { "(" patternExpr ")" }
+
+patternValue {
+  patternPrimitive |
+  patternRange |
+  VariableReferencePattern |
+  ExpressionReferencePattern |
+  patternConstant
+}
+
+patternRange {
+  patternPrimitive (".." | "...") patternPrimitive |
+  (".." | "...") patternPrimitive |
+  patternPrimitive (".." | "...")
+}
+
+patternPrimitive {
+  patternLiteral |
+  Lambda
+}
+
+patternLiteral {
+  literal |
+  String |
+  Subshell |
+  // HeredocBeginning |
+  Regex |
+  StringArray |
+  SymbolArray |
+  keywordVariable
+}
+
+keywordVariable { Nil | Self | True | False | Line | File | Encoding }
+
+VariableReferencePattern { "^" (Identifier | nonlocalVariable) }
+ExpressionReferencePattern { "^" "(" expression ")" }
+
+patternConstant {
+  Constant |
+  patternConstant? "::" Constant
+}
+
+If { "if" statement (terminator | Then) (Else | Elsif)? 'end' }
+Unless { "unless" statement (terminator | Then) (Else | Elsif)? 'end' }
+Elsif { "elsif" statement (terminator | Then) (Else | Elsif)? }
+Else { "else" terminator? statements? }
+Then {
+  terminator statements |
+  terminator? 'then' statements
+}
+Begin { "begin" terminator? BodyStatement? "end" }
+Ensure { "ensure" statements? }
+Rescue { "rescue" Exceptions? ExceptionVariable? (terminator | Then) }
+Exceptions { commaSep1<arg | SplatArgument> }
+ExceptionVariable { "=>" lhs }
+
+BodyStatement {
+  statements (Rescue | Else | Ensure)* |
+  statements? (Rescue | Else | Ensure)+
+}
+
+// Following comment copied verbatim except for translating the rule names
+
+// Method calls without parentheses (aka "command calls") are only allowed
+// in certain positions, like the top-level of a statement, the condition
+// of a postfix control-flow operator like `If`, or as the value of a
+// control-flow statement like `Return`. In many other places, they're not
+// allowed.
+//
+// Because of this distinction, a lot of rules have two variants: the
+// normal variant, which can appear anywhere that an expression is valid,
+// and the "command" varaint, which is only valid in a more limited set of
+// positions, because it can contain "command calls".
+//
+// The `expression` rule can appear in relatively few places, but can
+// contain command calls. The `arg` rule can appear in many more places,
+// but cannot contain command calls (unless they are wrapped in parens).
+// This naming convention is based on Ruby's standard grammar.
+
+expression {
+  CommandBinary |
+  CommandUnary |
+  CommandAssignment |
+  CommandOperatorAssignment |
+  CommandCall |
+  CommandCallWithBlock |
+  ChainedCommandCall { !chainedCommandCall } |
+  ReturnCommand |
+  YieldCommand |
+  BreakCommand |
+  NextCommand |
+  arg
+}
+
+arg {
+  unaryMinusPow |
+  primary |
+  Assignment |
+  OperatorAssignment |
+  Conditional |
+  Range |
+  Binary |
+  Unary
+}
+
+unaryMinusPow { unaryMinusNum pow }
+// TODO check: in the place of arg, the tree-sitter grammar has 
+// `field('right', $._arg, $.binary)`. 3-argument field? I haven't found docs
+// for this; should it be arg or Binary, or is that just arg aliased to Binary?
+pow { !exponential simpleNumeric "**" arg }
+
+primary {
+  ParenthesizedStatements |
+  lhs |
+  functionIdentifierCall |
+  Call |
+  Array |
+  StringArray|
+  SymbolArray |
+  Hash |
+  Subshell |
+  literal |
+  String |
+  Character |
+  ChainedString |
+  Regex |
+  Lambda |
+  Method |
+  SingletonMethod |
+  Class |
+  SingletonClass |
+  Module |
+  Begin |
+  While |
+  Until |
+  If |
+  Unless |
+  For |
+  Case |
+  CaseMatch |
+  Return |
+  Yield |
+  Break |
+  Next |
+  Redo |
+  Retry |
+  ParenthesizedUnary
+  // | HeredocBeginning
+}
+
+ParenthesizedStatements { "(" statements? ")" }
+
+ElementReference {
+  !elementReference
+  primary "[" argumentListWithTrailingComma "]"
+}
+
+ScopeResolution {
+  !scopeResolution
+  primary? "::" Constant
+}
+
+callOperator { "." | "&." | "::" }
+call {
+  !call
+  primary callOperator (Identifier | Operator | Constant | functionIdentifier)
+}
+CommandCall {
+  call |
+  chainedCommandCall |
+  (variable | functionIdentifier) |
+  CommandArgumentList
+}
+CommandCallWithBlock {
+  (call | variable | functionIdentifier)
+  CommandArgumentList
+  (Block | DoBlock)
+}
+chainedCommandCall {
+  !chainedCommandCall
+  CommandCallWithBlock callOperator
+  (Identifier | functionIdentifier | Operator | Constant)
+}
+Call {
+  callReceiverArguments (Block | DoBlock)?
+  callReceiver (Block | DoBlock)
+}
+callReceiver {
+  call | variable | functionIdentifier
+}
+callReceiverArguments {
+  (callReceiver | !call primary callOperator) ArgumentList
+}
+CommandArgumentList { commaSep1<argument> }
+ArgumentList { '(' argumentListWithTrailingComma? ")" }
+argumentListWithTrailingComma { commaSep1<argument> ","? }
+argument {
+  expression |
+  SplatArgument |
+  HashSplatArgument |
+  ForwardArgument |
+  BlockArgument |
+  Pair
+}
+ForwardArgument { "..." }
+SplatArgument { "*" arg }
+HashSplatArgument { "**" arg }
+BlockArgument {
+  !blockArgument
+  "&" arg?
+}
+
+DoBlock {
+  "do" terminator? (BlockParameters terminator?)? BodyStatement? "end"
+}
+
+Block {
+  "{" BlockParameters BlockBody? "}"
+}
+
+argRHS {
+  arg |
+  RescueModifierArg
+}
+
+Assignment {
+  !assign
+  (lhs | LeftAssignmentList)
+  "="
+  (argRHS | SplatArgument | RightAssignmentList)
+}
+
+CommandAssignment {
+  !assign
+  (lhs | LeftAssignmentList)
+  "="
+  (expression | RescueModifierExpression | RescueModifier)
+}
+
+assignmentOperator {
+  "+=" | "-=" | "*=" | "**=" | "/=" | "||=" | "|=" | "&&=" | "&=" |
+  "%=" | ">>=" | "<<=" | "^="
+}
+
+OperatorAssignment {
+  !assign
+  lhs assignmentOperator argRHS
+}
+
+CommandOperatorAssignment {
+  !assign
+  lhs assignmentOperator (expression RescueModifierExpression)
+}
+
+Conditional {
+  !conditional
+  arg "?" arg ":" arg
+}
+
+Range {
+  !range
+  (arg (".." | "...") arg? |
+  (".." | "...") arg)
+}
+
+Binary {
+  arg !and "and" arg |
+  arg !or "or" arg |
+  arg !booleanAnd "&&" arg |
+  arg !booleanOr "||" arg |
+  arg !shift ("<<" | "..") arg |
+  arg !comparison ("<" | "<=" | ">=" | ">") arg |
+  arg !bitwiseAnd "&" arg |
+  arg !bitwiseOr ("^" | "|") arg |
+  arg !additive ("+" | "-") arg |
+  arg !multiplicative ("/" | "%" | "*") arg |
+  arg !relational ("==" | "!=" | "===" | "<=>" | "=~" | "!~") arg |
+  arg !exponential "**" arg
+}
+
+CommandBinary {
+  expression ("or" | "and") expression
+}
+
+Unary {
+  !defined "defined?" arg |
+  !not "not" arg |
+  !unaryMinus ("-" | "+") arg |
+  !complement ("!" | "~") arg
+}
+
+CommandUnary {
+  !defined "defined?" arg |
+  !not "not" arg |
+  !unaryMinus ("-" | "+") arg |
+  !complement ("!" | "~") arg
+}
+
+ParenthesizedUnary {
+  !call ("defined?" | "not") ParenthesizedStatements
+}
+
+UnaryLiteral {
+  !unaryMinus ("-" | "+") simpleNumeric
+}
+
+literal { SimpleSymbol | DelimitedSymbol | numeric }
+numeric { simpleNumeric | UnaryLiteral }
+simpleNumeric { Integer | Float | Complex | Rational }
+
+RightAssignmentList {
+  !assignmentCommon commaSep1<arg | SplatArgument>
+}
+
+LeftAssignmentList { mlhs } // ???
+mlhs {
+  !assignmentCommon
+  commaSep1<lhs | RestAssignment | DestructuredLeftAssignment> ","?
+}
+DestructuredLeftAssignment { !assignmentCommon "(" mlhs ")" }
+RestAssignment { !assignmentCommon "*" lhs? }
+
+functionIdentifier { IdentifierSuffix | ConstantSuffix }
+functionIdentifierCall { functionIdentifier } // left prec
+lhs {
+  variable | True | False | Nil | ScopeResolution | ElementReference | call
+}
+variable { Self | Super | nonlocalVariable | Identifier | Constant }
+
+Operator {
+  ".." | "|" | "^" | "&" | "<=>" | "==" | "===" | "=~" | ">" | ">=" | "<" |
+  "<=" | "+" | "-" | "*" | "/" | "%" | "!" | "!~" | "**" | "<<" | ">>" | "~" |
+  "+@" | "-@" | "~@" | "[]" | "[]=" | "`"
+}
+
+methodName {
+  Identifier | functionIdentifier | Constant | Setter | SimpleSymbol |
+  DelimitedSymbol | Operator | nonlocalVariable
+}
+
+nonlocalVariable { InstanceVariable | ClassVariable | GlobalVariable }
+
+Setter { Identifier "=" }
+
+Undef { "undef" commaSep1<methodName> }
+Alias { "alias" methodName methodName }
+
+Array { "[" argumentListWithTrailingComma? "]" }
+
+Hash { "{" (commaSep1<Pair | HashSplatArgument> ","?)? "}" }
+
+Pair {
+  arg "=>" arg |
+  String ":" arg |
+  (// TODO: HashKeySymbol |
+    Identifier | Constant | IdentifierSuffix | ConstantSuffix) ":" arg?
+}
+
+Lambda {
+  "->" (Parameters | BareParameters) (Block | DoBlock)
+}
+
+// General helpers
+
+commaSep<content> { "" | content ("," content)* }
+
+commaSep1<content> { content ("," content)* }
 
 @tokens {
-  Identifier { $[a-zA-Z_]$[a-zA-Z0-9_]* }
+  idChars { ![\x00-\x1F\s:;`"'@$#.,|^&<=>+\-*/\\%?!~()\[\]{}]* }
+  lowerAlphaChar { ![\x00-\x1F\sA-Z0-9:;`"'@$#.,|^&<=>+\-*/\\%?!~()\[\]{}] }
+  alphaChar { ![\x00-\x1F\s0-9:;`"'@$#.,|^&<=>+\-*/\\%?!~()\[\]{}] }
 
-  LineComment { "#" ![\n\r]* }
+  Line { "__LINE__" }
+  File { "__FILE__" }
+  Encoding { "__ENCODING__" }
+
+  Comment {
+    "#" ![\n\r]* |
+    "=begin" ![\n\r]* $[\r]?$[\n] (
+      ![=] | "="![e] | "=e"![n] | "=en"![d]
+    )* "=end" ![\n\r]*
+  }
+
+  Integer {
+    "0" $[bB] $[01] ("_"? $[01])* |
+    "0" $[oO] $[0-7] ("_"? $[0-7])* |
+    ("0" $[dD])? $[0-9] ("_"? $[0-9])* |
+    "0" $[xX] $[0-9a-fA-F] ("_"? $[0-9a-fA-F])*
+  }
+
+  Float {
+    @digit ("_"? @digit) ("." @digit)? ("_"? @digit)*
+    ($[eE] $[+-]? @digit ("_"? @digit)*)?
+  }
+  intOrFloat { Integer | Float }
+  
+  // TODO unaryMinusNum looks wrong
+  unaryMinusNum { "-" intOrFloat }
+  Complex { intOrFloat ("i" | "ri") }
+  Rational { intOrFloat "r" }
+
+  Super { "super" }
+  Self { "self" }
+  True { "true" }
+  False { "false" }
+  Nil { "nil" }
+
+  Constant { $[A-Z] idChars }
+  ConstantSuffix { $[A-Z] idChars "?" } // choice with `_constant_suffix` (1071)?
+  Identifier { lowerAlphaChar idChars }
+  IdentifierSuffix { lowerAlphaChar idChars "?" } // choice with `_identifier_suffix` (1073)?
+  InstanceVariable { "@" alphaChar idChars }
+  ClassVariable { "@@" alphaChar idChars }
+  GlobalVariable {
+    "$"
+    (
+      "-" $[a-zA-Z0-9_] |
+      $[!@&`'+~=/\\,;.<>*$?:"] |
+      $[0-9]+ |
+      $[a-zA-Z_]$[a-zA-Z0-9_]*
+    )
+  }
+  ChainedString { String String+ }
+
+  // FIXME: can this be !@whitespace?
+  whitespaceComplement { ![ \r\n\t\f\v] }
+
+  Character {
+    "?"
+    (
+      "\\" whitespaceComplement (
+        "{" $[0-9A-Fa-f]* "}" |
+        $[0-9A-Fa-f]* |
+        "-" whitespaceComplement ($[MC] "-" whitespaceComplement)?
+      )?|
+      whitespaceComplement
+    )
+  }
+
+  Interpolation {
+    // TODO
+    // "#{" statements? "}" |
+    // shortInterpolation nonlocalVariable
+    "a"
+  }
+
+  String { '"' literalContents? '"' }
+  Subshell { "`" literalContents "`" }
+  StringArray {
+    "%w(" @whitespace+ (literalContents @whitespace+)*
+    literalContents @whitespace? ")"
+  }
+  SymbolArray {
+    "%i(" @whitespace+ (literalContents @whitespace+)*
+    literalContents @whitespace? ")"
+  }
+  DelimitedSymbol {
+    ':"' literalContents? '"'
+  }
+  Regex { "/" literalContents "/" }
+  HeredocBody {
+    heredocBodyStart
+    (HeredocContent | Interpolation | EscapeSequence)*
+    HeredocEnd
+  }
+
+  literalContents {
+    (StringContent | Interpolation | EscapeSequence)+
+  }
+
+  // https://ruby-doc.org/core-2.5.0/doc/syntax/literals_rdoc.html#label-Strings
+  EscapeSequence {
+    "\\" (
+      ![^ux0-7] | // single character
+      "x" $[0-9a-fA-F] $[0-9a-fA-F]? |
+      $[0-7] ($[0-7] $[0-7]?)? |
+      "u" $[0-9a-fA-F] $[0-9a-fA-F] $[0-9a-fA-F] $[0-9a-fA-F] |
+      "u{" $[0-9a-fA-F ]+ "}"
+    )
+  }
+
+  // TODO check externals (37)
+
+  // TODO SimpleSymbol
+  SimpleSymbol { "a" }
+  // TODO StringContent
+  StringContent { "a" }
+
+  // CHECK lineBreak: does this need to be based on crossing newline?
+  lineBreak { "\n" }
+
+  // TODO: check token.immediate(...)
+
+  // misc tokens
+  "-"
 }
 
 @detectDelim
