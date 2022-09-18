@@ -14,41 +14,42 @@
 
 @skip { Comment }
 
+// TODO: Remove some @left; some are here just in case
 @precedence {
-  complement,
-  exponential,
-  unaryMinus,
-  multiplicative,
-  additive,
-  shift,
-  scopeResolution,
-  call,
-  bitwiseAnd,
-  bitwiseOr,
-  comparison,
-  relational,
-  bitwiseAnd,
-  bitwiseOrPlusOne,
-  bitwiseOr,
-  comparison,
-  relational,
-  booleanAnd,
-  booleanOr,
-  range,
-  conditional,
-  rescue,
-  assign,
-  alias,
-  defined,
-  not,
+  complement @left,
+  exponential @right,
+  unaryMinus @left,
+  multiplicative @left,
+  additive @left,
+  shift @left,
+  scopeResolution @left,
+  call @left,
+  bitwiseAnd @left,
+  bitwiseOr @left,
+  comparison @left,
+  relational @left,
+  bitwiseAnd @left,
+  parameter @left,
+  bitwiseOr @left,
+  comparison @left,
+  relational @left,
+  booleanAnd @left,
+  booleanOr @left,
+  range @left,
+  conditional @left,
+  rescue @left,
+  assign @left,
+  alias @left,
+  defined @left,
+  not @left,
   elementReference @left,
-  assignmentCommon,
-  or,
-  and,
+  assignmentCommon @left,
+  or @left,
+  and @left,
   // are these for tokenizers? (2)
   // curlyBlock,
   // doBlock,
-  comment,
+  comment @left,
 
   // left/right only
   returnCommand @left,
@@ -62,24 +63,35 @@
   redo @left,
   retry @left,
   chainedCommandCall @left,
-  blockArgument @right
+  blockArgument @right,
+  // The !statement precedence seems to double lezer compile time,
+  // but it's used to resolve shift/reduce between `statement rescue arg` and `statement`
+  // Is there a better way?
+  statement
+
+  // just need @left, order doesn't matter
+  commandBinary @left
 }
 
 BlockBody { statements }
 
 statements {
-  (statement terminator | ";")+ statement? | 
+  !statement
+  (
+    statement terminator //| ";"
+  )+ statement? | 
+  !statement
   statement
 }
 
 terminator { lineBreak | ";" }
 
 BeginBlock {
-  "BEGIN" "{" statements? "}"
+  constantKw<"BEGIN"> "{" statements? "}"
 }
 
 EndBlock {
-  "END" "{" statements? "}"
+  constantKw<"END"> "{" statements? "}"
 }
 
 statement {
@@ -96,11 +108,11 @@ statement {
 }
 
 Method {
-  "def" methodRest
+  kw<"def"> methodRest
 }
 
 SingletonMethod {
-  "def"
+  kw<"def">
   (
     variable |
     "(" arg ")"
@@ -112,20 +124,22 @@ SingletonMethod {
 methodRest {
   methodName
   (
-    bodyExpr |
-    Parameters (terminator? BodyStatement? "end") bodyExpr |
-    BareParameters? terminator BodyStatement? "end"
+    // bodyExpr |
+    Parameters (
+      terminator? BodyStatement? kw<"end"> //| bodyExpr
+    ) |
+    BareParameters? terminator BodyStatement? kw<"end">
   )
 }
 
 RescueModifierArg {
   !rescue
-  arg "rescue" arg
+  arg kw<"rescue"> arg
 }
 
 RescueModifierExpression {
   !rescue
-  expression "rescue" arg
+  expression kw<"rescue"> arg
 }
 
 bodyExpr {
@@ -141,8 +155,9 @@ BareParameters {
 }
 
 BlockParameters {
-  "|" commaSep<formalParameter> ","?
+  "|" commaSep<formalParameter> //","?
   (";" commaSep1<Identifier>) // Block shadow variables
+  "|"
 }
 
 formalParameter {
@@ -166,25 +181,25 @@ SplatParameter { "*" Identifier? }
 
 HashSplatParameter { "**" Identifier? }
 
-HashSplatNil { "**" "nil" }
+HashSplatNil { "**" kw<"nil"> }
 
 BlockParameter { "&" Identifier? }
 
 KeywordParameter {
-  !bitwiseOrPlusOne
+  !parameter
   Identifier ":" arg
 }
 
 OptionalParameter {
-  !bitwiseOrPlusOne
+  !parameter
   Identifier "=" arg
 }
 
 Class {
-  "class"  (Constant | ScopeResolution)
+  kw<"class">  (Constant | ScopeResolution)
   (Superclass terminator | terminator?)
   BodyStatement?
-  "end"
+  kw<"end">
 }
 
 Superclass {
@@ -192,47 +207,46 @@ Superclass {
 }
 
 SingletonClass {
-  "class" "<<"
+  kw<"class"> "<<"
   arg terminator
-  BodyStatement? "end"
+  BodyStatement? kw<"end">
 }
 
 Module {
-  "module" (Constant | ScopeResolution) terminator?
-  BodyStatement? "end"
+  kw<"module"> (Constant | ScopeResolution) terminator?
+  BodyStatement? kw<"end">
 }
 
-ReturnCommand { !returnCommand 'return' CommandArgumentList }
-YieldCommand { !yieldCommand 'yield' CommandArgumentList }
-BreakCommand { !breakCommand 'break' CommandArgumentList }
-NextCommand { !nextCommand 'next' CommandArgumentList }
-Return { !return 'return' ArgumentList? }
-Yield { !yield 'yield' ArgumentList? }
-Break { !break 'break' ArgumentList? }
-Next { !next 'next' ArgumentList? }
-Redo { !redo 'redo' ArgumentList? }
-Retry { !retry 'retry' ArgumentList? }
+ReturnCommand { !returnCommand kw<"return"> CommandArgumentList }
+YieldCommand { !yieldCommand kw<"yield"> CommandArgumentList }
+BreakCommand { !breakCommand kw<"break"> CommandArgumentList }
+NextCommand { !nextCommand kw<"next"> CommandArgumentList }
+Return { !return kw<"return"> ArgumentList? }
+Yield { !yield kw<"yield"> ArgumentList? }
+Break { !break kw<"break"> ArgumentList? }
+Next { !next kw<"next"> ArgumentList? }
+Redo { !redo kw<"redo"> ArgumentList? }
+Retry { !retry kw<"retry"> ArgumentList? }
 
-IfModifier { !rescue statement 'if' expression }
-UnlessModifier { !rescue statement 'unless' expression }
-WhileModifier { !rescue statement 'while' expression }
-UntilModifier { !rescue statement 'until' expression }
-RescueModifier { !rescue statement 'rescue' expression }
+IfModifier { !rescue statement kw<"if"> expression }
+UnlessModifier { !rescue statement kw<"unless"> expression }
+WhileModifier { !rescue statement kw<"while"> expression }
+UntilModifier { !rescue statement kw<"until"> expression }
+RescueModifier { !rescue statement kw<"rescue"> expression }
 
-While { 'while' statement Do }
-Until { 'until' statement Do }
-For { 'for' (lhs | LeftAssignmentList) In Do }
-In { 'in' arg }
-Do { ('do' | terminator) statements? 'end' }
+While { kw<"while"> statement Do }
+Until { kw<"until"> statement Do }
+For { kw<"for"> (lhs | LeftAssignmentList) kw<"in"> arg Do }
+Do { (kw<"do"> | terminator) statements? kw<"end"> }
 
-Case { 'case' statement terminator? When* Else? 'end' }
-CaseMatch { 'case' statement terminator? InClause+ Else? 'end' }
-When { 'when' commaSep1<Pattern> (terminator | Then) }
-InClause { 'in' patternTopExprBody guard? (terminator | Then) }
+Case { kw<"case"> statement terminator? When* Else? kw<"end"> }
+CaseMatch { kw<"case"> statement terminator? InClause+ Else? kw<"end"> }
+When { kw<"when"> commaSep1<Pattern> (terminator | Then) }
+InClause { kw<"in"> patternTopExprBody guard? (terminator | Then) }
 Pattern { arg | SplatArgument }
 guard {
-  IfGuard { 'if' expression} |
-  UnlessGuard { 'unless' expression }
+  IfGuard { kw<"if"> expression} |
+  UnlessGuard { kw<"unless"> expression }
 }
 
 patternTopExprBody {
@@ -243,14 +257,14 @@ patternTopExprBody {
 }
 
 arrayPatternN {
-  patternExpr ',' |
-  patternExpr ',' (patternExpr | arrayPatternN) |
-  SplatParameter (',' patternExpr)*
+  patternExpr "," |
+  patternExpr "," (patternExpr | arrayPatternN) |
+  SplatParameter ("," patternExpr)*
 }
 
 patternExpr { AsPattern | patternExprAlt }
 
-AsPattern { patternExpr '=>' Identifier }
+AsPattern { patternExpr "=>" Identifier }
 
 patternExprAlt { AlternativePattern | patternExprBasic }
 
@@ -261,22 +275,22 @@ arrayPatternBody { patternExpr | arrayPatternN }
 // TODO: combine ArrayPattern, FindPattern, HashPattern into a single generic
 ArrayPattern {
   "[" arrayPatternBody? "]" |
-  patternConstant '[' arrayPatternBody? ']' |
-  patternConstant '(' arrayPatternBody? ')'
+  patternConstant "[" arrayPatternBody? "]" |
+  patternConstant "(" arrayPatternBody? ")"
 }
 
 findPatternBody { SplatParameter ("," patternExpr)+ "," SplatParameter }
 
 FindPattern {
-  "[" findPatternBody? "]" |
-  patternConstant '[' findPatternBody? ']' |
-  patternConstant '(' findPatternBody? ')'
+  "[" findPatternBody "]" |
+  patternConstant "[" findPatternBody "]" |
+  patternConstant "(" findPatternBody ")"
 }
 
 hashPatternBody {
-  commaSep1<KeywordPattern> ","? |
-  commaSep1<KeywordPattern> "," hashPatternAnyRest |
-  hashPatternAnyRest
+  commaSep1<KeywordPattern> //","?
+  // commaSep1<KeywordPattern> "," hashPatternAnyRest |
+  | hashPatternAnyRest
 }
 
 KeywordPattern {
@@ -288,8 +302,8 @@ hashPatternAnyRest { HashSplatParameter | HashSplatNil }
 
 HashPattern {
   "{" hashPatternBody? "}" |
-  patternConstant '[' hashPatternBody ']' |
-  patternConstant '(' hashPatternBody ')'
+  patternConstant "[" hashPatternBody "]" |
+  patternConstant "(" hashPatternBody ")"
 }
 
 patternExprBasic {
@@ -343,17 +357,17 @@ patternConstant {
   patternConstant? "::" Constant
 }
 
-If { "if" statement (terminator | Then) (Else | Elsif)? 'end' }
-Unless { "unless" statement (terminator | Then) (Else | Elsif)? 'end' }
-Elsif { "elsif" statement (terminator | Then) (Else | Elsif)? }
-Else { "else" terminator? statements? }
+If { kw<"if"> statement (terminator | Then) (Else | Elsif)? kw<"end"> }
+Unless { kw<"unless"> statement (terminator | Then) (Else | Elsif)? kw<"end"> }
+Elsif { kw<"elsif"> statement (terminator | Then) (Else | Elsif)? }
+Else { kw<"else"> terminator? statements? }
 Then {
   terminator statements |
-  terminator? 'then' statements
+  terminator? kw<"then"> statements
 }
-Begin { "begin" terminator? BodyStatement? "end" }
-Ensure { "ensure" statements? }
-Rescue { "rescue" Exceptions? ExceptionVariable? (terminator | Then) }
+Begin { kw<"begin"> terminator? BodyStatement? kw<"end"> }
+Ensure { kw<"ensure"> statements? }
+Rescue { kw<"rescue"> Exceptions? ExceptionVariable? (terminator | Then) }
 Exceptions { commaSep1<arg | SplatArgument> }
 ExceptionVariable { "=>" lhs }
 
@@ -383,23 +397,23 @@ BodyStatement {
 expression {
   CommandBinary |
   CommandUnary |
-  CommandAssignment |
-  CommandOperatorAssignment |
-  CommandCall |
-  CommandCallWithBlock |
-  ChainedCommandCall { !chainedCommandCall } |
-  ReturnCommand |
-  YieldCommand |
-  BreakCommand |
-  NextCommand |
+  // CommandAssignment |
+  // CommandOperatorAssignment |
+  // CommandCall |
+  // CommandCallWithBlock |
+  // chainedCommandCall |
+  // ReturnCommand |
+  // YieldCommand |
+  // BreakCommand |
+  // NextCommand |
   arg
 }
 
 arg {
   unaryMinusPow |
   primary |
-  Assignment |
-  OperatorAssignment |
+  // Assignment |
+  // OperatorAssignment |
   Conditional |
   Range |
   Binary |
@@ -463,7 +477,9 @@ ScopeResolution {
   primary? "::" Constant
 }
 
-callOperator { "." | "&." | "::" }
+callOperator {
+  "." | "&." //| "::"
+}
 call {
   !call
   primary callOperator (Identifier | Operator | Constant | functionIdentifier)
@@ -495,8 +511,10 @@ callReceiverArguments {
   (callReceiver | !call primary callOperator) ArgumentList
 }
 CommandArgumentList { commaSep1<argument> }
-ArgumentList { '(' argumentListWithTrailingComma? ")" }
-argumentListWithTrailingComma { commaSep1<argument> ","? }
+ArgumentList { "(" argumentListWithTrailingComma? ")" }
+argumentListWithTrailingComma {
+  commaSep1<argument> // ","?
+}
 argument {
   expression |
   SplatArgument |
@@ -514,7 +532,7 @@ BlockArgument {
 }
 
 DoBlock {
-  "do" terminator? (BlockParameters terminator?)? BodyStatement? "end"
+  kw<"do"> terminator? (BlockParameters terminator?)? BodyStatement? kw<"end">
 }
 
 Block {
@@ -567,11 +585,11 @@ Range {
 }
 
 Binary {
-  arg !and "and" arg |
-  arg !or "or" arg |
+  arg !and kw<"and"> arg |
+  arg !or kw<"or"> arg |
   arg !booleanAnd "&&" arg |
   arg !booleanOr "||" arg |
-  arg !shift ("<<" | "..") arg |
+  arg !shift ("<<" | ">>") arg |
   arg !comparison ("<" | "<=" | ">=" | ">") arg |
   arg !bitwiseAnd "&" arg |
   arg !bitwiseOr ("^" | "|") arg |
@@ -582,25 +600,26 @@ Binary {
 }
 
 CommandBinary {
-  expression ("or" | "and") expression
+  !commandBinary
+  expression (kw<"or"> | kw<"and">) expression
 }
 
 Unary {
-  !defined "defined?" arg |
-  !not "not" arg |
+  !defined kw<"defined?"> arg |
+  !not kw<"not"> arg |
   !unaryMinus ("-" | "+") arg |
   !complement ("!" | "~") arg
 }
 
 CommandUnary {
-  !defined "defined?" arg |
-  !not "not" arg |
-  !unaryMinus ("-" | "+") arg |
-  !complement ("!" | "~") arg
+  !defined kw<"defined?"> expression |
+  !not kw<"not"> expression |
+  !unaryMinus ("-" | "+") expression |
+  !complement ("!" | "~") expression
 }
 
 ParenthesizedUnary {
-  !call ("defined?" | "not") ParenthesizedStatements
+  !call (kw<"defined?"> | kw<"not">) ParenthesizedStatements
 }
 
 UnaryLiteral {
@@ -618,7 +637,9 @@ RightAssignmentList {
 LeftAssignmentList { mlhs } // ???
 mlhs {
   !assignmentCommon
-  commaSep1<lhs | RestAssignment | DestructuredLeftAssignment> ","?
+  commaSep1<
+    //lhs |
+    RestAssignment | DestructuredLeftAssignment> //","?
 }
 DestructuredLeftAssignment { !assignmentCommon "(" mlhs ")" }
 RestAssignment { !assignmentCommon "*" lhs? }
@@ -626,7 +647,9 @@ RestAssignment { !assignmentCommon "*" lhs? }
 functionIdentifier { IdentifierSuffix | ConstantSuffix }
 functionIdentifierCall { functionIdentifier } // left prec
 lhs {
-  variable | True | False | Nil | ScopeResolution | ElementReference | call
+  variable | True | False | Nil //| ScopeResolution
+  //| ElementReference
+  | call
 }
 variable { Self | Super | nonlocalVariable | Identifier | Constant }
 
@@ -637,20 +660,24 @@ Operator {
 }
 
 methodName {
-  Identifier | functionIdentifier | Constant | Setter | SimpleSymbol |
-  DelimitedSymbol | Operator | nonlocalVariable
+  Identifier | functionIdentifier | Constant | // Setter { Identifier "=" } |
+  SimpleSymbol | DelimitedSymbol | Operator | nonlocalVariable
 }
 
 nonlocalVariable { InstanceVariable | ClassVariable | GlobalVariable }
 
-Setter { Identifier "=" }
-
-Undef { "undef" commaSep1<methodName> }
-Alias { "alias" methodName methodName }
+Undef { kw<"undef"> commaSep1<methodName> }
+Alias { kw<"alias"> methodName methodName }
 
 Array { "[" argumentListWithTrailingComma? "]" }
 
-Hash { "{" (commaSep1<Pair | HashSplatArgument> ","?)? "}" }
+Hash {
+  "{"
+  (
+    commaSep1<Pair | HashSplatArgument> //","?
+  )?
+  "}"
+}
 
 Pair {
   arg "=>" arg |
@@ -663,21 +690,30 @@ Lambda {
   "->" (Parameters | BareParameters) (Block | DoBlock)
 }
 
+Super { kw<"super"> }
+Self { kw<"self"> }
+True { kw<"true"> }
+False { kw<"false"> }
+Nil { kw<"nil"> }
+Line { kw<"__LINE__"> }
+File { kw<"__FILE__"> }
+Encoding { kw<"__ENCODING__"> }
+
 // General helpers
 
 commaSep<content> { "" | content ("," content)* }
-
 commaSep1<content> { content ("," content)* }
+
+kw<term> { @specialize[@name={term}]<Identifier, term> }
+constantKw<term> { @specialize[@name={term}]<Constant, term> }
 
 @tokens {
   idChars { ![\x00-\x1F\s:;`"'@$#.,|^&<=>+\-*/\\%?!~()\[\]{}]* }
   lowerAlphaChar { ![\x00-\x1F\sA-Z0-9:;`"'@$#.,|^&<=>+\-*/\\%?!~()\[\]{}] }
   alphaChar { ![\x00-\x1F\s0-9:;`"'@$#.,|^&<=>+\-*/\\%?!~()\[\]{}] }
 
-  Line { "__LINE__" }
-  File { "__FILE__" }
-  Encoding { "__ENCODING__" }
 
+  @precedence { Comment, "=" }
   Comment {
     "#" ![\n\r]* |
     "=begin" ![\n\r]* $[\r]?$[\n] (
@@ -685,6 +721,7 @@ commaSep1<content> { content ("," content)* }
     )* "=end" ![\n\r]*
   }
 
+  @precedence { Complex, Rational, Float, Integer }
   Integer {
     "0" $[bB] $[01] ("_"? $[01])* |
     "0" $[oO] $[0-7] ("_"? $[0-7])* |
@@ -698,19 +735,15 @@ commaSep1<content> { content ("," content)* }
   }
   intOrFloat { Integer | Float }
   
-  // TODO unaryMinusNum looks wrong
+  @precedence { unaryMinusNum "-" }
   unaryMinusNum { "-" intOrFloat }
   Complex { intOrFloat ("i" | "ri") }
   Rational { intOrFloat "r" }
 
-  Super { "super" }
-  Self { "self" }
-  True { "true" }
-  False { "false" }
-  Nil { "nil" }
-
+  @precedence { ConstantSuffix, Constant }
   Constant { $[A-Z] idChars }
   ConstantSuffix { $[A-Z] idChars "?" } // choice with `_constant_suffix` (1071)?
+  @precedence { IdentifierSuffix, Identifier }
   Identifier { lowerAlphaChar idChars }
   IdentifierSuffix { lowerAlphaChar idChars "?" } // choice with `_identifier_suffix` (1073)?
   InstanceVariable { "@" alphaChar idChars }
@@ -729,6 +762,8 @@ commaSep1<content> { content ("," content)* }
   // FIXME: can this be !@whitespace?
   whitespaceComplement { ![ \r\n\t\f\v] }
 
+  // FIXME: Character-"?" precedence depends on whitespace
+  @precedence { Character, "?" }
   Character {
     "?"
     (
@@ -786,7 +821,7 @@ commaSep1<content> { content ("," content)* }
   // TODO check externals (37)
 
   // TODO SimpleSymbol
-  SimpleSymbol { "a" }
+  SimpleSymbol { ":" "idk" }
   // TODO StringContent
   StringContent { "a" }
 
