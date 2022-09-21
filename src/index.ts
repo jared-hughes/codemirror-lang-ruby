@@ -1,16 +1,18 @@
 import { parser } from "./syntax.grammar";
-import {
-  LRLanguage,
-  LanguageSupport,
-  bracketMatching,
-} from "@codemirror/language";
+import { LRLanguage, LanguageSupport } from "@codemirror/language";
 import { styleTags, tags as t } from "@lezer/highlight";
 
 export const rubyLanguage = LRLanguage.define({
   parser: parser.configure({
     props: [
       styleTags({
-        Identifier: t.definition(t.variableName),
+        "Identifier IdentifierSuffix Constant ConstantSuffix": t.variableName,
+        "InstanceVariable ClassVariable GlobalVariable": t.variableName,
+        "Integer Float Copmlex Rational UnaryLiteral": t.number,
+        "( )": t.paren,
+        "[ ]": t.squareBracket,
+        "{ }": t.brace,
+        Comment: t.comment,
       }),
     ],
   }),
@@ -20,9 +22,5 @@ export const rubyLanguage = LRLanguage.define({
 });
 
 export function ruby() {
-  return new LanguageSupport(
-    rubyLanguage,
-    // limit bracket matching to just the delimeters specified in syntax.grammar
-    bracketMatching({ brackets: "{}" })
-  );
+  return new LanguageSupport(rubyLanguage);
 }
