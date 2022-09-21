@@ -1,0 +1,44 @@
+# Integer
+
+123
+0b1
+0B1111_1010
+0o7
+0O012_345
+0d9
+0d1_234_567_890
+0xF
+0XdE_AD_Be_EF_06_89
+
+
+==>
+
+Program(
+  Integer,
+  Integer,
+  Integer,
+  Integer,
+  Integer,
+  Integer,
+  Integer,
+  Integer,
+  Integer,
+)
+
+# Float
+
+1.0
+123_456.789_012
+1e8
+123_456e+3_00
+2.789_123e-4
+
+==>
+
+Program(
+  Float,
+  Float,
+  Float,
+  Float,
+  Float,  
+)

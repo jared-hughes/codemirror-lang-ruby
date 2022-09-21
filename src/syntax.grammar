@@ -723,16 +723,19 @@ constantKw<term> { @specialize[@name={term}]<Constant, term> }
 
   @precedence { Complex, Rational, Float, Integer }
   Integer {
+    digits |
     "0" $[bB] $[01] ("_"? $[01])* |
     "0" $[oO] $[0-7] ("_"? $[0-7])* |
-    ("0" $[dD])? $[0-9] ("_"? $[0-9])* |
+    ("0" $[dD])? digits |
     "0" $[xX] $[0-9a-fA-F] ("_"? $[0-9a-fA-F])*
   }
 
   Float {
-    @digit ("_"? @digit) ("." @digit)? ("_"? @digit)*
-    ($[eE] $[+-]? @digit ("_"? @digit)*)?
+    digits "." digits floatEpart? |
+    digits floatEpart
   }
+  floatEpart { $[eE] $[+-]? digits }
+  digits {  @digit ("_"? @digit)* }
   intOrFloat { Integer | Float }
   
   @precedence { unaryMinusNum "-" }

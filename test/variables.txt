@@ -1,0 +1,69 @@
+# Identifier
+
+abc
+d_e_f
+
+==>
+
+Program(
+  Identifier,
+  Identifier
+)
+
+# IdentifierSuffix
+
+abc?
+
+==>
+
+Program(
+  IdentifierSuffix
+)
+
+# Constant
+
+Abc
+DEF
+
+==>
+
+Program(
+  Constant,
+  Constant
+)
+
+# ConstantSuffix
+
+Abc?
+DEF?
+
+==>
+
+Program(
+  ConstantSuffix,
+  ConstantSuffix
+)
+
+# InstanceVariable
+
+@abc
+@Def
+
+==>
+
+Program(
+  InstanceVariable,
+  InstanceVariable
+)
+
+# ClassVariable
+
+@@abc
+@@Def
+
+==>
+
+Program(
+  ClassVariable,
+  ClassVariable
+)

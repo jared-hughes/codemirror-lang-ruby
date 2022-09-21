@@ -1,9 +1,0 @@
-# Identifiers
-
-abc
-
-==>
-
-Program(
-  Identifier
-)
